@@ -24,14 +24,14 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Register specific command handlers
-	bot.RegisterHandler(gramkit.OnMessage, "/start", startHandler)
-	bot.RegisterHandler(gramkit.OnMessage, "/help", helpHandler)
+	// Register command handlers (typed — receives *models.Message directly)
+	bot.HandleCommand("start", startHandler)
+	bot.HandleCommand("help", helpHandler)
 
-	// Register callback query handler with prefix match
-	bot.RegisterHandlerMatch(gramkit.OnCallbackQuery, gramkit.MatchPrefix, "action_", callbackHandler)
+	// Register callback query handler with prefix match (typed — receives *models.CallbackQuery directly)
+	bot.HandleCallbackQueryMatch(gramkit.MatchPrefix, "action_", callbackHandler)
 
-	fmt.Println("Бот запущен...")
+	fmt.Println("Bot is running...")
 	bot.StartPolling(ctx)
 }
 
@@ -43,30 +43,30 @@ func loggerMiddleware(ctx context.Context, b *gramkit.Bot, update *models.Update
 	next(ctx, b, update)
 }
 
-func startHandler(ctx context.Context, b *gramkit.Bot, update *models.Update) {
+func startHandler(ctx context.Context, b *gramkit.Bot, msg *models.Message) {
 	b.SendMessage(ctx, params.SendMessage{
-		ChatID: update.Message.Chat.ID,
-		Text:   "Привет! Я echo-бот на gramkit 🤖",
+		ChatID: msg.Chat.ID,
+		Text:   "Hello! I'm an echo bot powered by gramkit",
 	})
 }
 
-func helpHandler(ctx context.Context, b *gramkit.Bot, update *models.Update) {
+func helpHandler(ctx context.Context, b *gramkit.Bot, msg *models.Message) {
 	b.SendMessage(ctx, params.SendMessage{
-		ChatID: update.Message.Chat.ID,
-		Text:   "Команды:\n/start - начало\n/help - помощь\nЛюбой текст - эхо",
+		ChatID: msg.Chat.ID,
+		Text:   "Commands:\n/start - start\n/help - help\nAny text - echo",
 	})
 }
 
-func callbackHandler(ctx context.Context, b *gramkit.Bot, update *models.Update) {
-	log.Printf("Callback: %s", update.CallbackQuery.Data)
+func callbackHandler(ctx context.Context, b *gramkit.Bot, cq *models.CallbackQuery) {
+	log.Printf("Callback: %s", cq.Data)
 }
 
-// defaultHandler handles all unmatched messages.
+// defaultHandler handles all unmatched messages (still uses *models.Update for WithDefaultHandler).
 func defaultHandler(ctx context.Context, b *gramkit.Bot, update *models.Update) {
 	if update.Message != nil {
 		b.SendMessage(ctx, params.SendMessage{
 			ChatID: update.Message.Chat.ID,
-			Text:   "Эхо: " + update.Message.Text,
+			Text:   "Echo: " + update.Message.Text,
 		})
 	}
 }

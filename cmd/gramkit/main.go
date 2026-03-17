@@ -3,9 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
-const version = "1.0.0"
+const version = "1.0.1"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -36,7 +37,12 @@ func main() {
 		cmdMakeMiddleware(args[0])
 
 	case "run":
-		cmdRun()
+		flags := parseFlags(args)
+		cmdRun(flags["debug"], flags["watch"])
+
+	case "run:dev":
+		flags := parseFlags(args)
+		cmdRunDev(flags["debug"], flags["watch"])
 
 	case "webhook:set":
 		if len(args) < 1 {
@@ -74,14 +80,30 @@ Available Commands:
   make:handler <name>     Generate a new handler
   make:middleware <name>   Generate a new middleware
   run                     Run the bot (go run .)
+  run:dev                 Run with hot-reload (dev mode)
   webhook:set <url>       Set webhook URL
   webhook:delete          Delete webhook
   webhook:info            Get webhook info
   version                 Print version
-  help                    Show this help`)
+  help                    Show this help
+
+Flags (for run / run:dev):
+  --debug                 Start delve debugger (attach IDE to :2345)
+  --watch                 Start web dashboard for updates (:4080)`)
 }
 
 func fatal(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
 	os.Exit(1)
+}
+
+// parseFlags extracts --flag style flags from args.
+func parseFlags(args []string) map[string]bool {
+	flags := make(map[string]bool)
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--") {
+			flags[arg[2:]] = true
+		}
+	}
+	return flags
 }

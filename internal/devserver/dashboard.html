@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>gramkit watch</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#1b1b1b;--bg-alt:#252525;--bg-row:#1e1e1e;--bg-row-hover:#2a2a2a;
+  --bg-selected:#1a2733;--border:#333;--border-light:#3a3a3a;
+  --text:#d4d4d4;--text-dim:#808080;--text-bright:#e8e8e8;
+  --accent:#4fc3f7;--accent-dim:#2a6a8a;
+  --red:#e06c75;--green:#98c379;--yellow:#e5c07b;--blue:#61afef;
+  --purple:#c678dd;--orange:#d19a66;--cyan:#56b6c2;--teal:#2ec4b6;
+}
+body{
+  font-family:'JetBrains Mono','Cascadia Code','SF Mono','Consolas',monospace;
+  background:var(--bg);color:var(--text);font-size:12px;line-height:1.4;
+  display:flex;flex-direction:column;height:100vh;overflow:hidden;
+}
+
+/* ── Header bar ── */
+.header{
+  background:#181818;border-bottom:1px solid var(--border);
+  padding:0 16px;height:36px;display:flex;align-items:center;gap:16px;
+  flex-shrink:0;
+}
+.header .logo{color:var(--accent);font-weight:700;font-size:13px;letter-spacing:0.5px}
+.header .logo span{color:var(--text-dim);font-weight:400}
+.header .sep{width:1px;height:18px;background:var(--border)}
+.header .status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim)}
+.header .status .dot{width:7px;height:7px;border-radius:50%;background:var(--red)}
+.header .status.on .dot{background:var(--green)}
+.header .stats{margin-left:auto;display:flex;gap:14px;font-size:11px;color:var(--text-dim)}
+.header .stats b{color:var(--text);font-weight:600}
+
+/* ── Toolbar ── */
+.toolbar{
+  background:#1f1f1f;border-bottom:1px solid var(--border);
+  padding:0 16px;height:32px;display:flex;align-items:center;gap:8px;
+  flex-shrink:0;
+}
+.toolbar input{
+  background:#2d2d2d;border:1px solid var(--border);border-radius:3px;
+  color:var(--text);padding:3px 8px;font-size:11px;font-family:inherit;
+  width:260px;outline:none;
+}
+.toolbar input:focus{border-color:var(--accent-dim)}
+.toolbar input::placeholder{color:#555}
+.toolbar .btn{
+  background:transparent;border:1px solid var(--border);border-radius:3px;
+  color:var(--text-dim);padding:3px 10px;font-size:11px;font-family:inherit;
+  cursor:pointer;white-space:nowrap;
+}
+.toolbar .btn:hover{background:var(--bg-alt);color:var(--text)}
+.toolbar .btn.active{background:var(--accent-dim);border-color:var(--accent-dim);color:var(--text-bright)}
+.toolbar .spacer{flex:1}
+.toolbar .pipe{color:#444}
+
+/* ── Dock buttons (Chrome DevTools style) ── */
+.dock-group{display:flex;gap:2px;margin-left:8px}
+.dock-btn{
+  background:transparent;border:1px solid var(--border);
+  color:var(--text-dim);cursor:pointer;padding:3px 5px;font-size:10px;
+  font-family:inherit;display:flex;align-items:center;justify-content:center;
+  width:26px;height:22px;border-radius:3px;
+}
+.dock-btn:first-child{border-radius:3px 0 0 3px}
+.dock-btn:last-child{border-radius:0 3px 3px 0}
+.dock-btn:not(:first-child){border-left:none}
+.dock-btn:hover{background:var(--bg-alt);color:var(--text)}
+.dock-btn.active{background:var(--accent-dim);border-color:var(--accent-dim);color:var(--text-bright)}
+/* Dock icons using CSS box drawings */
+.dock-icon{display:flex;flex-direction:column;gap:1px;width:12px;height:10px}
+.dock-icon-h .dock-icon{flex-direction:row}
+.dock-icon-part{background:var(--text-dim);border-radius:1px}
+.dock-btn.active .dock-icon-part{background:var(--text-bright)}
+/* Bottom split icon */
+.dock-icon-bottom .p1{flex:1}
+.dock-icon-bottom .p2{flex:1;background:var(--accent)}
+.dock-btn.active .dock-icon-bottom .p2{background:var(--text-bright)}
+/* Right split icon */
+.dock-icon-right{flex-direction:row !important}
+.dock-icon-right .p1{flex:1}
+.dock-icon-right .p2{flex:1;background:var(--accent)}
+.dock-btn.active .dock-icon-right .p2{background:var(--text-bright)}
+
+/* ── Split layout ── */
+.split{flex:1;display:flex;overflow:hidden}
+.split.dock-bottom{flex-direction:column}
+.split.dock-right{flex-direction:row}
+
+/* ── Flow table ── */
+.table-wrap{flex:1;overflow-y:auto;min-height:0;min-width:0}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+thead{position:sticky;top:0;z-index:2}
+thead th{
+  background:#1a1a1a;border-bottom:1px solid var(--border);
+  padding:4px 10px;text-align:left;font-weight:600;font-size:11px;
+  color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;
+  white-space:nowrap;
+}
+tbody tr{border-bottom:1px solid #2a2a2a;cursor:pointer}
+tbody tr:hover{background:var(--bg-row-hover)}
+tbody tr.selected{background:var(--bg-selected);border-left:2px solid var(--accent)}
+tbody tr.selected td:first-child{padding-left:8px}
+tbody td{padding:5px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Column widths */
+.col-id{width:56px;color:var(--text-dim);text-align:right}
+.col-type{width:130px}
+.col-from{width:160px}
+.col-chat{width:140px}
+.col-content{color:var(--text-dim)}
+.col-size{width:60px;text-align:right;color:var(--text-dim)}
+.col-time{width:90px;text-align:right;color:var(--text-dim)}
+
+/* Type labels */
+.type{font-weight:600;font-size:11px}
+.type-message{color:var(--blue)}
+.type-command{color:var(--red)}
+.type-callback_query{color:var(--purple)}
+.type-inline_query{color:var(--yellow)}
+.type-edited_message{color:var(--cyan)}
+.type-channel_post{color:var(--green)}
+.type-edited_channel_post{color:var(--teal)}
+.type-poll{color:var(--orange)}
+.type-poll_answer{color:var(--orange)}
+.type-chat_member{color:var(--teal)}
+.type-my_chat_member{color:var(--teal)}
+.type-chat_join_request{color:var(--green)}
+.type-shipping_query{color:var(--yellow)}
+.type-pre_checkout_query{color:var(--yellow)}
+.type-chosen_inline_result{color:var(--yellow)}
+.type-message_reaction{color:var(--purple)}
+.type-chat_boost{color:var(--green)}
+.type-business_message{color:var(--blue)}
+.type-default{color:var(--text-dim)}
+
+.from-name{color:var(--text-bright)}
+.from-username{color:var(--text-dim)}
+
+/* ── Detail pane ── */
+.detail{
+  background:#181818;
+  flex-shrink:0;overflow:hidden;display:none;flex-direction:column;
+}
+.detail.open{display:flex}
+/* Border depends on dock direction */
+.dock-bottom .detail{border-top:2px solid var(--accent-dim)}
+.dock-right .detail{border-left:2px solid var(--accent-dim)}
+
+.detail-header{
+  display:flex;align-items:center;padding:0 16px;height:32px;
+  border-bottom:1px solid var(--border);gap:0;flex-shrink:0;
+}
+.detail-tab{
+  padding:6px 14px;font-size:11px;font-family:inherit;
+  color:var(--text-dim);background:transparent;border:none;
+  cursor:pointer;border-bottom:2px solid transparent;
+  margin-bottom:-1px;
+}
+.detail-tab:hover{color:var(--text)}
+.detail-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.detail-close{
+  margin-left:auto;background:transparent;border:none;
+  color:var(--text-dim);cursor:pointer;font-size:16px;font-family:inherit;
+  padding:4px 8px;
+}
+.detail-close:hover{color:var(--text)}
+.detail-body{flex:1;overflow-y:auto;padding:12px 16px}
+.detail-body pre{
+  font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-all;
+}
+.detail-meta{display:grid;grid-template-columns:120px 1fr;gap:4px 12px;font-size:12px}
+.detail-meta dt{color:var(--text-dim);text-align:right}
+.detail-meta dd{color:var(--text-bright)}
+
+/* ── JSON highlighting ── */
+.j-key{color:#79c0ff}.j-str{color:#a5d6ff}.j-num{color:var(--green)}
+.j-bool{color:var(--red)}.j-null{color:var(--text-dim)}
+
+/* ── Empty state ── */
+.empty-state{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  flex:1;color:var(--text-dim);gap:8px;
+}
+.empty-state .icon{font-size:32px;opacity:0.3}
+.empty-state h2{font-size:14px;font-weight:400;color:#555}
+.empty-state p{font-size:11px;color:#444}
+
+/* ── New row flash ── */
+.flash{animation:rowflash 0.6s ease-out}
+@keyframes rowflash{0%{background:#1a2733}100%{background:transparent}}
+
+/* ── Resize handle ── */
+.resize-handle{flex-shrink:0;background:transparent}
+.dock-bottom .resize-handle{height:4px;cursor:ns-resize}
+.dock-right .resize-handle{width:4px;cursor:ew-resize}
+.resize-handle:hover{background:var(--accent-dim)}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:#3a3a3a;border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:#555}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="logo">gramkit<span> watch</span></div>
+  <div class="sep"></div>
+  <div class="status" id="status"><span class="dot"></span><span id="status-text">connecting</span></div>
+  <div class="stats">
+    <span>flows: <b id="count">0</b></span>
+    <span>shown: <b id="shown">0</b></span>
+  </div>
+</div>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <input type="text" id="filter" placeholder="Filter (type, text, chat, @username...)" spellcheck="false">
+  <div class="pipe">|</div>
+  <button class="btn" onclick="clearAll()" title="Clear all flows">Clear</button>
+  <button class="btn" id="btn-scroll" onclick="toggleScroll()" title="Auto-follow new flows">Follow</button>
+  <div class="spacer"></div>
+  <button class="btn" id="btn-wrap" onclick="toggleWrap()">Wrap</button>
+  <div class="pipe">|</div>
+  <!-- Dock orientation buttons -->
+  <div class="dock-group">
+    <button class="dock-btn active" id="dock-bottom" onclick="setDock('bottom')" title="Dock to bottom">
+      <div class="dock-icon dock-icon-bottom"><div class="dock-icon-part p1"></div><div class="dock-icon-part p2"></div></div>
+    </button>
+    <button class="dock-btn" id="dock-right" onclick="setDock('right')" title="Dock to right">
+      <div class="dock-icon dock-icon-right"><div class="dock-icon-part p1"></div><div class="dock-icon-part p2"></div></div>
+    </button>
+  </div>
+</div>
+
+<!-- Split: table + detail -->
+<div class="split dock-bottom" id="split">
+  <!-- Flow table -->
+  <div class="table-wrap" id="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="col-id">#</th>
+          <th class="col-type">Type</th>
+          <th class="col-from">From</th>
+          <th class="col-chat">Chat</th>
+          <th class="col-content">Content</th>
+          <th class="col-size">Size</th>
+          <th class="col-time">Time</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="empty-state" id="empty">
+      <div class="icon">&#9655;</div>
+      <h2>Waiting for updates...</h2>
+      <p>Send a message to your bot to see it here</p>
+    </div>
+  </div>
+
+  <!-- Resize handle -->
+  <div class="resize-handle" id="resize"></div>
+
+  <!-- Detail pane -->
+  <div class="detail" id="detail">
+    <div class="detail-header">
+      <button class="detail-tab active" data-tab="json" onclick="switchTab(this)">JSON</button>
+      <button class="detail-tab" data-tab="meta" onclick="switchTab(this)">Detail</button>
+      <button class="detail-close" onclick="closeDetail()">&times;</button>
+    </div>
+    <div class="detail-body" id="detail-body"></div>
+  </div>
+</div>
+
+<script>
+const flows = [];
+let selectedIdx = -1;
+let follow = true;
+let wrapJson = false;
+let detailSize = 280;
+let activeTab = 'json';
+let dockMode = 'bottom'; // 'bottom' | 'right'
+
+const tbody = document.getElementById('tbody');
+const tableWrap = document.getElementById('table-wrap');
+const splitEl = document.getElementById('split');
+const detail = document.getElementById('detail');
+const detailBody = document.getElementById('detail-body');
+const filterInput = document.getElementById('filter');
+const emptyEl = document.getElementById('empty');
+const countEl = document.getElementById('count');
+const shownEl = document.getElementById('shown');
+const statusEl = document.getElementById('status');
+const statusText = document.getElementById('status-text');
+
+/* ── SSE Connection ── */
+function connect() {
+  const es = new EventSource('/events');
+  es.onopen = () => { statusEl.classList.add('on'); statusText.textContent = 'live'; };
+  es.onerror = () => { statusEl.classList.remove('on'); statusText.textContent = 'reconnecting...'; };
+  es.onmessage = (e) => {
+    const event = JSON.parse(e.data);
+    if (event.type === 'connected') return;
+    addFlow(event);
+  };
+}
+
+/* ── Dock orientation ── */
+function setDock(mode) {
+  dockMode = mode;
+  splitEl.className = 'split dock-' + mode;
+  document.getElementById('dock-bottom').classList.toggle('active', mode === 'bottom');
+  document.getElementById('dock-right').classList.toggle('active', mode === 'right');
+  // Re-apply detail size
+  if (detail.classList.contains('open')) {
+    applyDetailSize();
+  }
+  localStorage.setItem('gramkit-dock', mode);
+}
+
+function applyDetailSize() {
+  if (dockMode === 'bottom') {
+    detail.style.height = detailSize + 'px';
+    detail.style.width = '';
+  } else {
+    detail.style.width = detailSize + 'px';
+    detail.style.height = '';
+  }
+}
+
+/* ── Flow management ── */
+function addFlow(event) {
+  const update = event.data;
+  const type = detectType(update);
+  const isCmd = type === 'message' && (update.message?.text || '').startsWith('/');
+  const flow = {
+    id: update.update_id || flows.length + 1,
+    type: isCmd ? 'command' : type,
+    typeRaw: type,
+    from: extractFrom(update, type),
+    chat: extractChat(update, type),
+    content: extractContent(update, type),
+    size: JSON.stringify(update).length,
+    time: new Date(event.timestamp),
+    data: update,
+    json: JSON.stringify(update, null, 2),
+  };
+  flows.push(flow);
+  countEl.textContent = flows.length;
+  emptyEl.style.display = 'none';
+
+  if (matchesFilter(flow)) {
+    const row = createRow(flow, flows.length - 1);
+    tbody.appendChild(row);
+    shownEl.textContent = tbody.children.length;
+    if (follow) tableWrap.scrollTop = tableWrap.scrollHeight;
+  }
+}
+
+function createRow(flow, idx) {
+  const tr = document.createElement('tr');
+  tr.className = 'flash';
+  tr.dataset.idx = idx;
+  tr.onclick = () => selectRow(idx);
+  tr.innerHTML =
+    '<td class="col-id">' + flow.id + '</td>' +
+    '<td class="col-type"><span class="type type-' + flow.type.replace(/[^a-z_]/g, '') + '">' + flow.type.replace(/_/g, ' ') + '</span></td>' +
+    '<td class="col-from">' + (flow.from.name ? '<span class="from-name">' + esc(flow.from.name) + '</span>' + (flow.from.user ? ' <span class="from-username">@' + esc(flow.from.user) + '</span>' : '') : '<span class="from-username">-</span>') + '</td>' +
+    '<td class="col-chat">' + esc(flow.chat) + '</td>' +
+    '<td class="col-content">' + esc(flow.content) + '</td>' +
+    '<td class="col-size">' + formatSize(flow.size) + '</td>' +
+    '<td class="col-time">' + formatTime(flow.time) + '</td>';
+  return tr;
+}
+
+function selectRow(idx) {
+  if (selectedIdx === idx) { closeDetail(); return; }
+  selectedIdx = idx;
+  document.querySelectorAll('tbody tr.selected').forEach(r => r.classList.remove('selected'));
+  const row = tbody.querySelector('[data-idx="' + idx + '"]');
+  if (row) row.classList.add('selected');
+  detail.classList.add('open');
+  applyDetailSize();
+  renderDetail();
+}
+
+function closeDetail() {
+  selectedIdx = -1;
+  detail.classList.remove('open');
+  detail.style.height = '';
+  detail.style.width = '';
+  document.querySelectorAll('tbody tr.selected').forEach(r => r.classList.remove('selected'));
+}
+
+/* ── Detail rendering ── */
+function renderDetail() {
+  if (selectedIdx < 0) return;
+  const flow = flows[selectedIdx];
+  if (activeTab === 'json') {
+    detailBody.innerHTML = '<pre style="white-space:' + (wrapJson ? 'pre-wrap' : 'pre') + '">' + highlight(flow.json) + '</pre>';
+  } else {
+    const u = flow.data;
+    let html = '<dl class="detail-meta">';
+    html += metaRow('Update ID', flow.id);
+    html += metaRow('Type', flow.type);
+    html += metaRow('Time', flow.time.toLocaleString());
+    html += metaRow('Size', flow.size + ' bytes');
+    if (flow.from.name) html += metaRow('From', flow.from.name + (flow.from.user ? ' (@' + flow.from.user + ')' : ''));
+    if (flow.from.id) html += metaRow('User ID', flow.from.id);
+    if (flow.chat) html += metaRow('Chat', flow.chat);
+    const chatObj = extractChatObj(u, flow.typeRaw);
+    if (chatObj) {
+      html += metaRow('Chat ID', chatObj.id);
+      html += metaRow('Chat Type', chatObj.type || '-');
+    }
+    if (flow.type === 'command') {
+      const text = u.message?.text || '';
+      const parts = text.split(' ');
+      html += metaRow('Command', parts[0]);
+      if (parts.length > 1) html += metaRow('Args', parts.slice(1).join(' '));
+    }
+    if (flow.type === 'callback_query') {
+      html += metaRow('Callback ID', u.callback_query?.id);
+      html += metaRow('Data', u.callback_query?.data);
+    }
+    if (flow.type === 'inline_query') {
+      html += metaRow('Query', u.inline_query?.query);
+      html += metaRow('Offset', u.inline_query?.offset || '');
+    }
+    html += '</dl>';
+    detailBody.innerHTML = html;
+  }
+}
+
+function metaRow(key, val) {
+  return '<dt>' + esc(key) + '</dt><dd>' + esc(String(val ?? '-')) + '</dd>';
+}
+
+function switchTab(btn) {
+  document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  activeTab = btn.dataset.tab;
+  renderDetail();
+}
+
+/* ── Extract helpers ── */
+function detectType(u) {
+  const types = [
+    'message','edited_message','channel_post','edited_channel_post',
+    'callback_query','inline_query','chosen_inline_result',
+    'shipping_query','pre_checkout_query','poll','poll_answer',
+    'my_chat_member','chat_member','chat_join_request',
+    'chat_boost','removed_chat_boost','message_reaction',
+    'message_reaction_count','business_connection','business_message',
+    'edited_business_message','deleted_business_messages','purchased_paid_media'
+  ];
+  for (const t of types) { if (u[t]) return t; }
+  return 'unknown';
+}
+
+function extractFrom(u, type) {
+  const sources = {
+    message: u.message?.from, edited_message: u.edited_message?.from,
+    callback_query: u.callback_query?.from, inline_query: u.inline_query?.from,
+    channel_post: u.channel_post?.from, business_message: u.business_message?.from,
+    chosen_inline_result: u.chosen_inline_result?.from,
+    shipping_query: u.shipping_query?.from, pre_checkout_query: u.pre_checkout_query?.from,
+    chat_join_request: u.chat_join_request?.from,
+    my_chat_member: u.my_chat_member?.from, chat_member: u.chat_member?.from,
+    poll_answer: u.poll_answer?.user,
+  };
+  const from = sources[type];
+  if (!from) return { name: '', user: '', id: '' };
+  return {
+    name: [from.first_name, from.last_name].filter(Boolean).join(' '),
+    user: from.username || '',
+    id: from.id || '',
+  };
+}
+
+function extractChat(u, type) {
+  const obj = extractChatObj(u, type);
+  if (!obj) return '';
+  return obj.title || [obj.first_name, obj.last_name].filter(Boolean).join(' ') || String(obj.id);
+}
+
+function extractChatObj(u, type) {
+  const msgTypes = ['message','edited_message','channel_post','edited_channel_post','business_message','edited_business_message'];
+  for (const t of msgTypes) { if (type === t && u[t]?.chat) return u[t].chat; }
+  if (type === 'callback_query' && u.callback_query?.message?.chat) return u.callback_query.message.chat;
+  if (type === 'chat_join_request') return u.chat_join_request?.chat;
+  if (type === 'my_chat_member') return u.my_chat_member?.chat;
+  if (type === 'chat_member') return u.chat_member?.chat;
+  if (type === 'chat_boost') return u.chat_boost?.chat;
+  return null;
+}
+
+function extractContent(u, type) {
+  const msgTypes = ['message','edited_message','channel_post','edited_channel_post','business_message','edited_business_message'];
+  for (const t of msgTypes) {
+    if (type === t && u[t]) {
+      const m = u[t];
+      if (m.text) return m.text;
+      if (m.caption) return '[media] ' + m.caption;
+      if (m.photo) return '[photo]';
+      if (m.document) return '[document] ' + (m.document.file_name || '');
+      if (m.video) return '[video]';
+      if (m.voice) return '[voice]';
+      if (m.audio) return '[audio]';
+      if (m.sticker) return '[sticker] ' + (m.sticker.emoji || '');
+      if (m.location) return '[location]';
+      if (m.contact) return '[contact]';
+      if (m.animation) return '[animation]';
+      if (m.new_chat_members) return '[new members]';
+      if (m.left_chat_member) return '[member left]';
+      return '[message]';
+    }
+  }
+  if (type === 'callback_query') return u.callback_query?.data || '';
+  if (type === 'inline_query') return u.inline_query?.query || '';
+  if (type === 'chosen_inline_result') return u.chosen_inline_result?.query || '';
+  if (type === 'poll') return u.poll?.question || '';
+  if (type === 'poll_answer') return 'poll: ' + (u.poll_answer?.poll_id || '');
+  return '';
+}
+
+/* ── Filter ── */
+filterInput.addEventListener('input', () => rebuildTable());
+
+function matchesFilter(flow) {
+  const q = filterInput.value.toLowerCase().trim();
+  if (!q) return true;
+  const terms = q.split(/\s+/);
+  const haystack = [flow.type, flow.from.name, flow.from.user, flow.chat, flow.content, String(flow.id)].join(' ').toLowerCase();
+  return terms.every(t => haystack.includes(t));
+}
+
+function rebuildTable() {
+  tbody.innerHTML = '';
+  let n = 0;
+  flows.forEach((flow, idx) => {
+    if (matchesFilter(flow)) { tbody.appendChild(createRow(flow, idx)); n++; }
+  });
+  shownEl.textContent = n;
+  emptyEl.style.display = n === 0 && flows.length === 0 ? '' : 'none';
+}
+
+/* ── Actions ── */
+function clearAll() {
+  flows.length = 0;
+  selectedIdx = -1;
+  countEl.textContent = 0;
+  shownEl.textContent = 0;
+  tbody.innerHTML = '';
+  closeDetail();
+  emptyEl.style.display = '';
+}
+
+function toggleScroll() {
+  follow = !follow;
+  document.getElementById('btn-scroll').classList.toggle('active', follow);
+}
+
+function toggleWrap() {
+  wrapJson = !wrapJson;
+  document.getElementById('btn-wrap').classList.toggle('active', wrapJson);
+  renderDetail();
+}
+
+/* ── Keyboard navigation ── */
+document.addEventListener('keydown', (e) => {
+  if (e.target === filterInput) {
+    if (e.key === 'Escape') { filterInput.blur(); filterInput.value = ''; rebuildTable(); }
+    return;
+  }
+  if (e.key === '/') { e.preventDefault(); filterInput.focus(); return; }
+  if (e.key === 'Escape') { closeDetail(); return; }
+
+  const visibleRows = Array.from(tbody.children);
+  if (!visibleRows.length) return;
+
+  if (e.key === 'ArrowDown' || e.key === 'j') {
+    e.preventDefault();
+    const curI = visibleRows.findIndex(r => +r.dataset.idx === selectedIdx);
+    const next = curI < visibleRows.length - 1 ? curI + 1 : 0;
+    selectRow(+visibleRows[next].dataset.idx);
+    visibleRows[next].scrollIntoView({ block: 'nearest' });
+  }
+  if (e.key === 'ArrowUp' || e.key === 'k') {
+    e.preventDefault();
+    const curI = visibleRows.findIndex(r => +r.dataset.idx === selectedIdx);
+    const prev = curI > 0 ? curI - 1 : visibleRows.length - 1;
+    selectRow(+visibleRows[prev].dataset.idx);
+    visibleRows[prev].scrollIntoView({ block: 'nearest' });
+  }
+});
+
+/* ── Resize handle ── */
+const resizeEl = document.getElementById('resize');
+let resizing = false;
+
+resizeEl.addEventListener('mousedown', (e) => {
+  resizing = true;
+  e.preventDefault();
+  document.body.style.cursor = dockMode === 'bottom' ? 'ns-resize' : 'ew-resize';
+  document.body.style.userSelect = 'none';
+  document.addEventListener('mousemove', onResize);
+  document.addEventListener('mouseup', stopResize, { once: true });
+});
+
+function onResize(e) {
+  if (!resizing) return;
+  const splitRect = splitEl.getBoundingClientRect();
+  if (dockMode === 'bottom') {
+    detailSize = Math.max(100, Math.min(splitRect.height - 100, splitRect.bottom - e.clientY));
+  } else {
+    detailSize = Math.max(200, Math.min(splitRect.width - 200, splitRect.right - e.clientX));
+  }
+  applyDetailSize();
+}
+
+function stopResize() {
+  resizing = false;
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  document.removeEventListener('mousemove', onResize);
+}
+
+/* ── Utilities ── */
+function formatSize(b) {
+  if (b < 1024) return b + ' B';
+  return (b / 1024).toFixed(1) + ' K';
+}
+function formatTime(d) {
+  return d.toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) +
+    '.' + String(d.getMilliseconds()).padStart(3, '0');
+}
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function highlight(json) {
+  return json.replace(
+    /("(?:\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+    function(m) {
+      let c = 'j-num';
+      if (/^"/.test(m)) c = /:$/.test(m) ? 'j-key' : 'j-str';
+      else if (/true|false/.test(m)) c = 'j-bool';
+      else if (/null/.test(m)) c = 'j-null';
+      return '<span class="' + c + '">' + esc(m) + '</span>';
+    }
+  );
+}
+
+/* ── Init ── */
+document.getElementById('btn-scroll').classList.add('active');
+// Restore saved dock preference
+const savedDock = localStorage.getItem('gramkit-dock');
+if (savedDock === 'right') setDock('right');
+connect();
+</script>
+</body>
+</html>

@@ -2,8 +2,10 @@ package gramkit
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
+	"github.com/gram-kit/gramkit-go/enums"
 	"github.com/gram-kit/gramkit-go/models"
 )
 
@@ -34,6 +36,7 @@ const (
 	OnEditedBusinessMessage                      // matches update.EditedBusinessMessage
 	OnDeletedBusinessMessages                    // matches update.DeletedBusinessMessages
 	OnPurchasedPaidMedia                         // matches update.PurchasedPaidMedia
+	OnCommand                                    // matches bot commands (e.g. /start, /help)
 )
 
 // MatchType defines how to match the pattern.
@@ -191,6 +194,38 @@ func extractText(ht HandlerType, u *models.Update) string {
 		if u.PurchasedPaidMedia != nil {
 			return "*"
 		}
+	case OnCommand:
+		if u.Message != nil {
+			return extractCommand(u.Message)
+		}
+	}
+	return ""
+}
+
+// extractCommand returns the command name from a message (without "/" and "@botname").
+// Returns empty string if the message does not start with a bot command entity.
+func extractCommand(msg *models.Message) string {
+	for _, e := range msg.Entities {
+		if e.Type == enums.EntityBotCommand && e.Offset == 0 {
+			cmd := msg.Text[1:e.Length] // skip "/"
+			if at := strings.IndexByte(cmd, '@'); at >= 0 {
+				cmd = cmd[:at]
+			}
+			return cmd
+		}
+	}
+	// Fallback: parse text directly if no entities (e.g. in tests).
+	if strings.HasPrefix(msg.Text, "/") {
+		cmd := msg.Text[1:]
+		if sp := strings.IndexByte(cmd, ' '); sp >= 0 {
+			cmd = cmd[:sp]
+		}
+		if at := strings.IndexByte(cmd, '@'); at >= 0 {
+			cmd = cmd[:at]
+		}
+		if cmd != "" {
+			return cmd
+		}
 	}
 	return ""
 }
@@ -213,6 +248,14 @@ func matchPattern(mt MatchType, text, pattern string) bool {
 
 // processUpdate finds matching handler and runs it through middleware chain.
 func (b *Bot) processUpdate(ctx context.Context, update *models.Update) {
+	// Broadcast to dev dashboard if enabled.
+	if b.devServer != nil {
+		if data, err := json.Marshal(update); err == nil {
+			b.devServer.Broadcast(data)
+		}
+	}
+
+	ctx = withUpdate(ctx, update)
 	h := b.matchHandler(update)
 	if h == nil {
 		return

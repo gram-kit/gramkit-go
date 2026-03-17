@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
+	"github.com/gram-kit/gramkit-go/internal/devserver"
 	"github.com/gram-kit/gramkit-go/internal/network"
 	"github.com/gram-kit/gramkit-go/models"
 	"github.com/gram-kit/gramkit-go/params"
@@ -24,6 +26,7 @@ type Bot struct {
 	handlers       []handler
 	middlewares    []MiddlewareFunc
 	pollTimeout    int
+	devServer      *devserver.Server
 	mu             sync.RWMutex
 }
 
@@ -71,6 +74,16 @@ func New(token string, opts ...Option) (*Bot, error) {
 
 	for _, opt := range opts {
 		opt(b)
+	}
+
+	// Start dev watch dashboard if GRAMKIT_WATCH_ADDR is set.
+	if addr := os.Getenv("GRAMKIT_WATCH_ADDR"); addr != "" {
+		b.devServer = devserver.New()
+		go func() {
+			if err := b.devServer.Start(addr); err != nil {
+				log.Printf("gramkit: dev server error: %v", err)
+			}
+		}()
 	}
 
 	return b, nil

@@ -315,3 +315,144 @@ func TestNoHandlerNoDefaultNoPanic(t *testing.T) {
 		Message:  &models.Message{Text: "hello"},
 	})
 }
+
+// --- OnCommand tests ---
+
+func TestOnCommand(t *testing.T) {
+	var called atomic.Int32
+
+	bot, _ := New("test-token")
+	bot.RegisterHandler(OnCommand, "start", func(ctx context.Context, b *Bot, update *models.Update) {
+		called.Add(1)
+	})
+
+	// Simple command
+	postUpdate(t, bot, models.Update{UpdateID: 1, Message: &models.Message{Text: "/start"}})
+	if called.Load() != 1 {
+		t.Fatalf("expected /start to match, got %d", called.Load())
+	}
+
+	// Command with @botname (group chat)
+	postUpdate(t, bot, models.Update{UpdateID: 2, Message: &models.Message{Text: "/start@mybot"}})
+	if called.Load() != 2 {
+		t.Fatalf("expected /start@mybot to match, got %d", called.Load())
+	}
+
+	// Command with arguments
+	postUpdate(t, bot, models.Update{UpdateID: 3, Message: &models.Message{Text: "/start deep_link_payload"}})
+	if called.Load() != 3 {
+		t.Fatalf("expected /start with args to match, got %d", called.Load())
+	}
+
+	// Different command should NOT match
+	postUpdate(t, bot, models.Update{UpdateID: 4, Message: &models.Message{Text: "/help"}})
+	if called.Load() != 3 {
+		t.Fatalf("expected /help NOT to match start command, got %d", called.Load())
+	}
+
+	// Plain text should NOT match
+	postUpdate(t, bot, models.Update{UpdateID: 5, Message: &models.Message{Text: "hello"}})
+	if called.Load() != 3 {
+		t.Fatalf("expected plain text NOT to match, got %d", called.Load())
+	}
+}
+
+func TestOnCommandWithEntities(t *testing.T) {
+	var called atomic.Int32
+
+	bot, _ := New("test-token")
+	bot.RegisterHandler(OnCommand, "start", func(ctx context.Context, b *Bot, update *models.Update) {
+		called.Add(1)
+	})
+
+	// Command with proper entities (as Telegram sends them)
+	postUpdate(t, bot, models.Update{
+		UpdateID: 1,
+		Message: &models.Message{
+			Text: "/start@mybot payload",
+			Entities: []models.MessageEntity{
+				{Type: "bot_command", Offset: 0, Length: 14},
+			},
+		},
+	})
+	if called.Load() != 1 {
+		t.Fatalf("expected entity-based command match, got %d", called.Load())
+	}
+}
+
+// --- Typed handler tests ---
+
+func TestHandleCommand(t *testing.T) {
+	var chatID int64
+
+	bot, _ := New("test-token")
+	bot.HandleCommand("start", func(ctx context.Context, b *Bot, msg *models.Message) {
+		chatID = msg.Chat.ID
+	})
+
+	postUpdate(t, bot, models.Update{
+		UpdateID: 1,
+		Message:  &models.Message{Text: "/start", Chat: models.Chat{ID: 42}},
+	})
+
+	if chatID != 42 {
+		t.Fatalf("expected chatID=42, got %d", chatID)
+	}
+}
+
+func TestHandleMessage(t *testing.T) {
+	var text string
+
+	bot, _ := New("test-token")
+	bot.HandleMessageMatch(MatchContains, "hello", func(ctx context.Context, b *Bot, msg *models.Message) {
+		text = msg.Text
+	})
+
+	postUpdate(t, bot, models.Update{
+		UpdateID: 1,
+		Message:  &models.Message{Text: "say hello world"},
+	})
+
+	if text != "say hello world" {
+		t.Fatalf("expected 'say hello world', got %q", text)
+	}
+}
+
+func TestHandleCallbackQuery(t *testing.T) {
+	var data string
+
+	bot, _ := New("test-token")
+	bot.HandleCallbackQuery("btn_yes", func(ctx context.Context, b *Bot, cq *models.CallbackQuery) {
+		data = cq.Data
+	})
+
+	postUpdate(t, bot, models.Update{
+		UpdateID:      1,
+		CallbackQuery: &models.CallbackQuery{ID: "1", Data: "btn_yes"},
+	})
+
+	if data != "btn_yes" {
+		t.Fatalf("expected 'btn_yes', got %q", data)
+	}
+}
+
+func TestUpdateFromContext(t *testing.T) {
+	var updateID int64
+
+	bot, _ := New("test-token")
+	bot.HandleCommand("start", func(ctx context.Context, b *Bot, msg *models.Message) {
+		u := UpdateFromContext(ctx)
+		if u != nil {
+			updateID = u.UpdateID
+		}
+	})
+
+	postUpdate(t, bot, models.Update{
+		UpdateID: 99,
+		Message:  &models.Message{Text: "/start"},
+	})
+
+	if updateID != 99 {
+		t.Fatalf("expected updateID=99, got %d", updateID)
+	}
+}
