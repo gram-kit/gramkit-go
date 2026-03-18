@@ -27,7 +27,6 @@ func cmdRun(debug, watch bool) {
 		fmt.Printf("\033[33m[gramkit:debug]\033[0m Delve listening on localhost%s\n", defaultDebug)
 		fmt.Println("\033[33m[gramkit:debug]\033[0m Attach your IDE to localhost" + defaultDebug)
 
-		// dlv debug compiles with debug flags and starts the debugger.
 		cmd = exec.Command("dlv", "debug", ".",
 			"--headless",
 			"--listen="+defaultDebug,
@@ -47,17 +46,17 @@ func cmdRun(debug, watch bool) {
 	// Create a new process group so Ctrl+C kills the entire tree.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	// Handle Ctrl+C: kill the process group and exit cleanly.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
 	if err := cmd.Start(); err != nil {
 		fatal(fmt.Sprintf("Failed to run: %v", err))
 	}
 
+	// Handle Ctrl+C: graceful stop then force kill.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
 	go func() {
 		<-sigCh
-		killProcessGroup(cmd)
+		stopProcess(cmd)
 	}()
 
 	_ = cmd.Wait()

@@ -20,6 +20,8 @@ const (
 	buildOutput   = "./tmp/bot"
 	defaultWatch  = ":4080"
 	defaultDebug  = ":2345"
+	// gracefulTimeout is how long to wait after SIGTERM before SIGKILL.
+	gracefulTimeout = 2 * time.Second
 )
 
 // skipDirs are directories that should not be watched.
@@ -68,9 +70,9 @@ func cmdRunDev(debug, watch bool) {
 		<-sigCh
 		fmt.Println("\n\033[36m[gramkit:dev]\033[0m Shutting down...")
 		mu.Lock()
-		killProcessGroup(cmd)
+		stopProcess(cmd)
 		mu.Unlock()
-		os.RemoveAll("tmp")
+		_ = os.RemoveAll("tmp")
 		os.Exit(0)
 	}()
 
@@ -112,7 +114,7 @@ func cmdRunDev(debug, watch bool) {
 				fmt.Printf("\033[33m[gramkit:dev]\033[0m File changed: %s\n", event.Name)
 
 				mu.Lock()
-				killProcessGroup(cmd)
+				stopProcess(cmd)
 				cmd = nil
 				mu.Unlock()
 
@@ -154,7 +156,7 @@ func build() error {
 }
 
 // startProc launches the binary, optionally through delve.
-// Returns the *exec.Cmd so we can kill the entire process group later.
+// Returns the *exec.Cmd so we can stop the entire process tree later.
 func startProc(debug bool) *exec.Cmd {
 	var cmd *exec.Cmd
 
@@ -189,19 +191,43 @@ func startProc(debug bool) *exec.Cmd {
 	return cmd
 }
 
-// killProcessGroup sends SIGKILL to the entire process group of cmd.
-// This ensures dlv + the bot child process are both terminated.
-func killProcessGroup(cmd *exec.Cmd) {
+// stopProcess gracefully stops a process tree: SIGTERM first, then SIGKILL after timeout.
+// This ensures dlv releases port :2345 and debugserver is cleaned up on macOS.
+func stopProcess(cmd *exec.Cmd) {
 	if cmd == nil || cmd.Process == nil {
 		return
 	}
+
 	pgid, err := syscall.Getpgid(cmd.Process.Pid)
+
+	// Step 1: Send SIGTERM to the process group for graceful shutdown.
 	if err == nil {
-		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		_ = syscall.Kill(-pgid, syscall.SIGTERM)
 	} else {
-		_ = cmd.Process.Kill()
+		_ = cmd.Process.Signal(syscall.SIGTERM)
 	}
-	_ = cmd.Wait()
+
+	// Step 2: Wait for process to exit, with a timeout.
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Process exited gracefully.
+		return
+	case <-time.After(gracefulTimeout):
+		// Step 3: Force kill if still alive.
+		fmt.Println("\033[33m[gramkit:dev]\033[0m Process did not exit, force killing...")
+		if err == nil {
+			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		} else {
+			_ = cmd.Process.Kill()
+		}
+		<-done
+	}
 }
 
 // watchDirs recursively adds directories to the watcher, skipping hidden/ignored dirs.
@@ -250,7 +276,6 @@ func ensureDlv() {
 		fatal(fmt.Sprintf("Failed to install delve: %v\nInstall manually: go install github.com/go-delve/delve/cmd/dlv@latest", err))
 	}
 
-	// Verify installation succeeded.
 	if _, err := exec.LookPath("dlv"); err != nil {
 		fatal("delve was installed but not found in PATH. Make sure $GOPATH/bin (or $GOBIN) is in your PATH.")
 	}
