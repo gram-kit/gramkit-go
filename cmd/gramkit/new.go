@@ -118,8 +118,8 @@ func main() {
 	}
 
 	// Register command handlers
-	bot.RegisterHandler(gramkit.OnMessage, "/start", handlers.Start)
-	bot.RegisterHandler(gramkit.OnMessage, "/help", handlers.Help)
+	bot.HandleCommand("start", handlers.Start)
+	bot.HandleCommand("help", handlers.Help)
 
 	fmt.Println("Bot is running...")
 	bot.StartPolling(ctx)
@@ -138,9 +138,9 @@ import (
 	"github.com/gram-kit/gramkit-go/params"
 )
 
-func Start(ctx context.Context, b *gramkit.Bot, update *models.Update) {
+func Start(ctx context.Context, b *gramkit.Bot, msg *models.Message) {
 	b.SendMessage(ctx, params.SendMessage{
-		ChatID: update.Message.Chat.ID,
+		ChatID: msg.Chat.ID,
 		Text:   "Welcome! I'm a bot built with gramkit.",
 	})
 }
@@ -158,9 +158,9 @@ import (
 	"github.com/gram-kit/gramkit-go/params"
 )
 
-func Help(ctx context.Context, b *gramkit.Bot, update *models.Update) {
+func Help(ctx context.Context, b *gramkit.Bot, msg *models.Message) {
 	b.SendMessage(ctx, params.SendMessage{
-		ChatID: update.Message.Chat.ID,
+		ChatID: msg.Chat.ID,
 		Text:   "Commands:\n/start - Start the bot\n/help - Show help",
 	})
 }
@@ -189,6 +189,7 @@ func Logger(ctx context.Context, b *gramkit.Bot, update *models.Update, next gra
 
 func dotGitignore() string {
 	return `.env
+tmp/
 *.exe
 *.exe~
 *.dll

@@ -30,6 +30,12 @@ func main() {
 		}
 		cmdMakeHandler(args[0])
 
+	case "make:command":
+		if len(args) < 1 {
+			fatal("Usage: gramkit make:command <name>")
+		}
+		cmdMakeCommand(args[0])
+
 	case "make:middleware":
 		if len(args) < 1 {
 			fatal("Usage: gramkit make:middleware <name>")
@@ -43,6 +49,12 @@ func main() {
 	case "run:dev":
 		flags := parseFlags(args)
 		cmdRunDev(flags["debug"], flags["watch"])
+
+	case "doctor":
+		cmdDoctor()
+
+	case "update":
+		cmdUpdate()
 
 	case "webhook:set":
 		if len(args) < 1 {
@@ -75,15 +87,24 @@ func printHelp() {
 Usage:
   gramkit <command> [arguments]
 
-Available Commands:
+Scaffolding:
   new <name>              Create a new bot project
-  make:handler <name>     Generate a new handler
-  make:middleware <name>   Generate a new middleware
+  make:handler <name>     Generate a message handler
+  make:command <name>     Generate a command handler (/start, /help, etc.)
+  make:middleware <name>   Generate a middleware
+
+Running:
   run                     Run the bot (go run .)
   run:dev                 Run with hot-reload (dev mode)
+
+Bot API:
   webhook:set <url>       Set webhook URL
   webhook:delete          Delete webhook
   webhook:info            Get webhook info
+
+Tools:
+  doctor                  Check environment and configuration
+  update                  Update gramkit CLI to latest version
   version                 Print version
   help                    Show this help
 

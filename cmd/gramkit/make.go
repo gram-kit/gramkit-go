@@ -33,20 +33,58 @@ import (
 	"github.com/gram-kit/gramkit-go/params"
 )
 
-func %s(ctx context.Context, b *gramkit.Bot, update *models.Update) {
-	if update.Message != nil {
-		b.SendMessage(ctx, params.SendMessage{
-			ChatID: update.Message.Chat.ID,
-			Text:   "%s handler",
-		})
-	}
+func %s(ctx context.Context, b *gramkit.Bot, msg *models.Message) {
+	b.SendMessage(ctx, params.SendMessage{
+		ChatID: msg.Chat.ID,
+		Text:   "%s handler",
+	})
 }
 `, funcName, funcName)
 
 	writeFile(path, content)
 	fmt.Printf("Handler created: %s\n", path)
 	fmt.Printf("Register it in main.go:\n")
-	fmt.Printf("  bot.RegisterHandler(gramkit.OnMessage, \"/%s\", handlers.%s)\n", toSnakeCase(name), funcName)
+	fmt.Printf("  bot.HandleMessage(\"*\", handlers.%s)\n", funcName)
+}
+
+func cmdMakeCommand(name string) {
+	dir := "handlers"
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		fatal(fmt.Sprintf("Failed to create directory: %v", err))
+	}
+
+	cmdName := strings.TrimPrefix(name, "/")
+	filename := toSnakeCase(cmdName) + ".go"
+	path := filepath.Join(dir, filename)
+
+	if _, err := os.Stat(path); err == nil {
+		fatal(fmt.Sprintf("Command handler already exists: %s", path))
+	}
+
+	funcName := toPascalCase(cmdName) + "Command"
+
+	content := fmt.Sprintf(`package handlers
+
+import (
+	"context"
+
+	gramkit "github.com/gram-kit/gramkit-go"
+	"github.com/gram-kit/gramkit-go/models"
+	"github.com/gram-kit/gramkit-go/params"
+)
+
+func %s(ctx context.Context, b *gramkit.Bot, msg *models.Message) {
+	b.SendMessage(ctx, params.SendMessage{
+		ChatID: msg.Chat.ID,
+		Text:   "/%s command",
+	})
+}
+`, funcName, cmdName)
+
+	writeFile(path, content)
+	fmt.Printf("Command handler created: %s\n", path)
+	fmt.Printf("Register it in main.go:\n")
+	fmt.Printf("  bot.HandleCommand(\"%s\", handlers.%s)\n", cmdName, funcName)
 }
 
 func cmdMakeMiddleware(name string) {
