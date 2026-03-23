@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -109,20 +110,47 @@ func (b *Bot) StartPolling(ctx context.Context, opts ...params.GetUpdates) error
 		}
 
 		p.Offset = offset
-		upds, err := b.GetUpdates(ctx, p)
-		if err != nil {
-			log.Printf("gramkit: polling error: %v", err)
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(3 * time.Second):
+
+		if b.devServer != nil {
+			// Use raw JSON for the dev dashboard to preserve all fields
+			// that are lost during Go struct serialization (e.g. callback_query.message).
+			rawArray, err := b.client.ExecuteRaw(ctx, "getUpdates", p)
+			if err != nil {
+				log.Printf("gramkit: polling error: %v", err)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(3 * time.Second):
+					continue
+				}
+			}
+			var rawUpdates []json.RawMessage
+			if err := json.Unmarshal(rawArray, &rawUpdates); err != nil {
 				continue
 			}
-		}
-
-		for _, upd := range upds {
-			b.processUpdate(ctx, &upd)
-			offset = upd.UpdateID + 1
+			for _, raw := range rawUpdates {
+				var upd models.Update
+				if err := json.Unmarshal(raw, &upd); err != nil {
+					continue
+				}
+				b.processUpdate(ctx, &upd, raw)
+				offset = upd.UpdateID + 1
+			}
+		} else {
+			upds, err := b.GetUpdates(ctx, p)
+			if err != nil {
+				log.Printf("gramkit: polling error: %v", err)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(3 * time.Second):
+					continue
+				}
+			}
+			for _, upd := range upds {
+				b.processUpdate(ctx, &upd)
+				offset = upd.UpdateID + 1
+			}
 		}
 	}
 }
@@ -157,12 +185,18 @@ func (b *Bot) WebhookHandler() http.HandlerFunc {
 
 func (b *Bot) webhookHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var upd models.Update
-		if err := json.NewDecoder(r.Body).Decode(&upd); err != nil {
+		// Read raw body for dev dashboard, then decode.
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		b.processUpdate(r.Context(), &upd)
+		var upd models.Update
+		if err := json.Unmarshal(raw, &upd); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		b.processUpdate(r.Context(), &upd, raw)
 		w.WriteHeader(http.StatusOK)
 	}
 }

@@ -76,3 +76,37 @@ func UseMethod[T any](c *Client, ctx context.Context, method string, params any)
 	}
 	return result, nil
 }
+
+// ExecuteRaw calls the API and returns the raw JSON of the result field.
+func (c *Client) ExecuteRaw(ctx context.Context, method string, params interface{}) (json.RawMessage, error) {
+	url := fmt.Sprintf("%s/%s", c.BaseURL, method)
+
+	body, err := json.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var apiResp struct {
+		models.Response[json.RawMessage]
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	if !apiResp.Ok {
+		return nil, fmt.Errorf("api error: %s (code %d)", apiResp.Description, apiResp.ErrorCode)
+	}
+
+	return apiResp.Result, nil
+}

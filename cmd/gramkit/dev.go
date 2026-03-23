@@ -259,7 +259,8 @@ func watchDirs(w *fsnotify.Watcher, root string) {
 			return nil
 		}
 		name := info.Name()
-		if skipDirs[name] || (len(name) > 0 && name[0] == '.') {
+		// Skip hidden dirs (but not "." itself), vendor, tmp, etc.
+		if name != "." && (skipDirs[name] || name[0] == '.') {
 			return filepath.SkipDir
 		}
 		_ = w.Add(path)

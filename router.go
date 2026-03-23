@@ -247,10 +247,14 @@ func matchPattern(mt MatchType, text, pattern string) bool {
 }
 
 // processUpdate finds matching handler and runs it through middleware chain.
-func (b *Bot) processUpdate(ctx context.Context, update *models.Update) {
+// rawJSON is the original JSON from Telegram, used for the dev dashboard.
+func (b *Bot) processUpdate(ctx context.Context, update *models.Update, rawJSON ...[]byte) {
 	// Broadcast to dev dashboard if enabled.
 	if b.devServer != nil {
-		if data, err := json.Marshal(update); err == nil {
+		if len(rawJSON) > 0 && rawJSON[0] != nil {
+			// Use raw JSON from Telegram — preserves all fields (e.g. callback_query.message).
+			b.devServer.Broadcast(rawJSON[0])
+		} else if data, err := json.Marshal(update); err == nil {
 			b.devServer.Broadcast(data)
 		}
 	}
