@@ -50,16 +50,26 @@ func cmdRun(debug, watch bool) {
 		fatal(fmt.Sprintf("Failed to run: %v", err))
 	}
 
+	m := &managedCmd{
+		cmd:  cmd,
+		done: make(chan struct{}),
+	}
+
+	go func() {
+		_ = cmd.Wait()
+		close(m.done)
+	}()
+
 	// Handle Ctrl+C: graceful stop then force kill.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		<-sigCh
-		stopProcess(cmd)
+		stopProcess(m)
 	}()
 
-	_ = cmd.Wait()
+	<-m.done
 }
 
 // loadEnv loads .env file into environment variables.

@@ -34,8 +34,9 @@ func New() *Server {
 // Start starts the dashboard HTTP server on the given address.
 func (s *Server) Start(addr string) error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.handleDashboard)
+	// Register /events BEFORE / so it takes priority.
 	mux.HandleFunc("/events", s.handleSSE)
+	mux.HandleFunc("/", s.handleDashboard)
 
 	fmt.Printf("\033[35m[gramkit:watch]\033[0m Dashboard: http://localhost%s\n", addr)
 	return http.ListenAndServe(addr, mux)
@@ -43,10 +44,13 @@ func (s *Server) Start(addr string) error {
 
 // Broadcast sends an update to all connected SSE clients.
 func (s *Server) Broadcast(data []byte) {
-	event, _ := json.Marshal(Event{
+	event, err := json.Marshal(Event{
 		Timestamp: time.Now(),
 		Data:      data,
 	})
+	if err != nil {
+		return
+	}
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -60,6 +64,11 @@ func (s *Server) Broadcast(data []byte) {
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	// Only serve dashboard on exact root path.
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write(dashboardHTML)
 }
@@ -88,13 +97,13 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Send initial connected event.
-	fmt.Fprintf(w, "data: {\"type\":\"connected\"}\n\n")
+	_, _ = fmt.Fprintf(w, "data: {\"type\":\"connected\"}\n\n")
 	flusher.Flush()
 
 	for {
 		select {
 		case data := <-ch:
-			fmt.Fprintf(w, "data: %s\n\n", data)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
 		case <-r.Context().Done():
 			return

@@ -29,6 +29,13 @@ var skipDirs = map[string]bool{
 	"tmp": true, "vendor": true, "testdata": true, "node_modules": true,
 }
 
+// managedCmd wraps exec.Cmd with a done channel to safely track process exit.
+// This avoids calling cmd.Wait() from multiple goroutines.
+type managedCmd struct {
+	cmd  *exec.Cmd
+	done chan struct{}
+}
+
 func cmdRunDev(debug, watch bool) {
 	loadEnv()
 
@@ -58,8 +65,8 @@ func cmdRunDev(debug, watch bool) {
 	watchDirs(watcher, ".")
 
 	var (
-		cmd *exec.Cmd
-		mu  sync.Mutex
+		proc *managedCmd
+		mu   sync.Mutex
 	)
 
 	// Graceful shutdown on SIGINT/SIGTERM.
@@ -70,7 +77,7 @@ func cmdRunDev(debug, watch bool) {
 		<-sigCh
 		fmt.Println("\n\033[36m[gramkit:dev]\033[0m Shutting down...")
 		mu.Lock()
-		stopProcess(cmd)
+		stopProcess(proc)
 		mu.Unlock()
 		_ = os.RemoveAll("tmp")
 		os.Exit(0)
@@ -81,7 +88,7 @@ func cmdRunDev(debug, watch bool) {
 		fmt.Printf("\033[31m[gramkit:dev]\033[0m Build failed:\n%s\n", err)
 	} else {
 		mu.Lock()
-		cmd = startProc(debug)
+		proc = startProc(debug)
 		mu.Unlock()
 	}
 
@@ -106,16 +113,19 @@ func cmdRunDev(debug, watch bool) {
 				}
 			}
 
+			// Capture event name for the closure (event is reused each iteration).
+			changedFile := event.Name
+
 			if timer != nil {
 				timer.Stop()
 			}
 			timer = time.AfterFunc(debounceDelay, func() {
 				fmt.Println()
-				fmt.Printf("\033[33m[gramkit:dev]\033[0m File changed: %s\n", event.Name)
+				fmt.Printf("\033[33m[gramkit:dev]\033[0m File changed: %s\n", changedFile)
 
 				mu.Lock()
-				stopProcess(cmd)
-				cmd = nil
+				stopProcess(proc)
+				proc = nil
 				mu.Unlock()
 
 				if err := build(); err != nil {
@@ -124,7 +134,7 @@ func cmdRunDev(debug, watch bool) {
 				}
 
 				mu.Lock()
-				cmd = startProc(debug)
+				proc = startProc(debug)
 				mu.Unlock()
 			})
 
@@ -156,8 +166,7 @@ func build() error {
 }
 
 // startProc launches the binary, optionally through delve.
-// Returns the *exec.Cmd so we can stop the entire process tree later.
-func startProc(debug bool) *exec.Cmd {
+func startProc(debug bool) *managedCmd {
 	var cmd *exec.Cmd
 
 	if debug {
@@ -187,36 +196,46 @@ func startProc(debug bool) *exec.Cmd {
 		return nil
 	}
 
-	go func() { _ = cmd.Wait() }()
-	return cmd
+	m := &managedCmd{
+		cmd:  cmd,
+		done: make(chan struct{}),
+	}
+
+	// Single goroutine that calls Wait and closes done.
+	// No other code should call cmd.Wait().
+	go func() {
+		_ = cmd.Wait()
+		close(m.done)
+	}()
+
+	return m
 }
 
 // stopProcess gracefully stops a process tree: SIGTERM first, then SIGKILL after timeout.
-// This ensures dlv releases port :2345 and debugserver is cleaned up on macOS.
-func stopProcess(cmd *exec.Cmd) {
-	if cmd == nil || cmd.Process == nil {
+func stopProcess(m *managedCmd) {
+	if m == nil || m.cmd == nil || m.cmd.Process == nil {
 		return
 	}
 
-	pgid, err := syscall.Getpgid(cmd.Process.Pid)
+	// Check if already exited.
+	select {
+	case <-m.done:
+		return
+	default:
+	}
 
-	// Step 1: Send SIGTERM to the process group for graceful shutdown.
+	pgid, err := syscall.Getpgid(m.cmd.Process.Pid)
+
+	// Step 1: Send SIGTERM for graceful shutdown.
 	if err == nil {
 		_ = syscall.Kill(-pgid, syscall.SIGTERM)
 	} else {
-		_ = cmd.Process.Signal(syscall.SIGTERM)
+		_ = m.cmd.Process.Signal(syscall.SIGTERM)
 	}
 
 	// Step 2: Wait for process to exit, with a timeout.
-	done := make(chan struct{})
-	go func() {
-		_ = cmd.Wait()
-		close(done)
-	}()
-
 	select {
-	case <-done:
-		// Process exited gracefully.
+	case <-m.done:
 		return
 	case <-time.After(gracefulTimeout):
 		// Step 3: Force kill if still alive.
@@ -224,9 +243,9 @@ func stopProcess(cmd *exec.Cmd) {
 		if err == nil {
 			_ = syscall.Kill(-pgid, syscall.SIGKILL)
 		} else {
-			_ = cmd.Process.Kill()
+			_ = m.cmd.Process.Kill()
 		}
-		<-done
+		<-m.done
 	}
 }
 
