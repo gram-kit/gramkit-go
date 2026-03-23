@@ -211,7 +211,8 @@ func startProc(debug bool) *managedCmd {
 	return m
 }
 
-// stopProcess gracefully stops a process tree: SIGTERM first, then SIGKILL after timeout.
+// stopProcess stops the process tree. Sends SIGINT first (most Go bots catch os.Interrupt),
+// falls back to SIGKILL. Blocks until the process is fully dead before returning.
 func stopProcess(m *managedCmd) {
 	if m == nil || m.cmd == nil || m.cmd.Process == nil {
 		return
@@ -226,27 +227,27 @@ func stopProcess(m *managedCmd) {
 
 	pgid, err := syscall.Getpgid(m.cmd.Process.Pid)
 
-	// Step 1: Send SIGTERM for graceful shutdown.
-	if err == nil {
-		_ = syscall.Kill(-pgid, syscall.SIGTERM)
-	} else {
-		_ = m.cmd.Process.Signal(syscall.SIGTERM)
+	killGroup := func(sig syscall.Signal) {
+		if err == nil {
+			_ = syscall.Kill(-pgid, sig)
+		} else {
+			_ = m.cmd.Process.Signal(sig)
+		}
 	}
 
-	// Step 2: Wait for process to exit, with a timeout.
+	// Step 1: SIGINT — most Go bots handle os.Interrupt for graceful shutdown.
+	killGroup(syscall.SIGINT)
+
 	select {
 	case <-m.done:
 		return
 	case <-time.After(gracefulTimeout):
-		// Step 3: Force kill if still alive.
-		fmt.Println("\033[33m[gramkit:dev]\033[0m Process did not exit, force killing...")
-		if err == nil {
-			_ = syscall.Kill(-pgid, syscall.SIGKILL)
-		} else {
-			_ = m.cmd.Process.Kill()
-		}
-		<-m.done
 	}
+
+	// Step 2: SIGKILL — force kill if SIGINT didn't work.
+	fmt.Println("\033[33m[gramkit:dev]\033[0m Process did not exit, force killing...")
+	killGroup(syscall.SIGKILL)
+	<-m.done
 }
 
 // watchDirs recursively adds directories to the watcher, skipping hidden/ignored dirs.

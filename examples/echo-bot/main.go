@@ -45,8 +45,9 @@ func loggerMiddleware(ctx context.Context, b *gramkit.Bot, update *models.Update
 
 func startHandler(ctx context.Context, b *gramkit.Bot, msg *models.Message) {
 	b.SendMessage(ctx, params.SendMessage{
-		ChatID: msg.Chat.ID,
-		Text:   "Hello! I'm an echo bot powered by gramkit",
+		ChatID:    msg.Chat.ID,
+		Text:      "Hello! Powered by -gramkit-",
+		ParseMode: "Markdown",
 	})
 }
 
