@@ -4,7 +4,7 @@ import "github.com/gram-kit/gramkit-go/models"
 
 type AnswerInlineQuery struct {
 	InlineQueryID string                            `json:"inline_query_id"`
-	Result        []models.InlineQueryResult        `json:"result"`
+	Results       []models.InlineQueryResult        `json:"results"`
 	CacheTime     int                               `json:"cache_time,omitempty"`
 	IsPersonal    bool                              `json:"is_personal,omitempty"`
 	NextOffset    string                            `json:"next_offset,omitempty"`

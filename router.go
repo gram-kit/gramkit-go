@@ -86,8 +86,8 @@ func (b *Bot) matchHandler(update *models.Update) HandlerFunc {
 	defer b.mu.RUnlock()
 
 	for _, h := range b.handlers {
-		text := extractText(h.handlerType, update)
-		if text == "" {
+		text, ok := extractText(h.handlerType, update)
+		if !ok {
 			continue
 		}
 		if matchPattern(h.matchType, text, h.pattern) {
@@ -99,107 +99,108 @@ func (b *Bot) matchHandler(update *models.Update) HandlerFunc {
 }
 
 // extractText returns the relevant text from an update based on handler type.
-func extractText(ht HandlerType, u *models.Update) string {
+// The bool indicates whether the update matches this handler type at all.
+func extractText(ht HandlerType, u *models.Update) (string, bool) {
 	switch ht {
 	case OnMessage:
 		if u.Message != nil {
-			return u.Message.Text
+			return u.Message.Text, u.Message.Text != ""
 		}
 	case OnEditedMessage:
 		if u.EditedMessage != nil {
-			return u.EditedMessage.Text
+			return u.EditedMessage.Text, u.EditedMessage.Text != ""
 		}
 	case OnChannelPost:
 		if u.ChannelPost != nil {
-			return u.ChannelPost.Text
+			return u.ChannelPost.Text, u.ChannelPost.Text != ""
 		}
 	case OnEditedChannelPost:
 		if u.EditedChannelPost != nil {
-			return u.EditedChannelPost.Text
+			return u.EditedChannelPost.Text, u.EditedChannelPost.Text != ""
 		}
 	case OnCallbackQuery:
 		if u.CallbackQuery != nil {
-			return u.CallbackQuery.Data
+			return u.CallbackQuery.Data, true
 		}
 	case OnInlineQuery:
 		if u.InlineQuery != nil {
-			return u.InlineQuery.Query
+			return u.InlineQuery.Query, true
 		}
 	case OnBusinessMessage:
 		if u.BusinessMessage != nil {
-			return u.BusinessMessage.Text
+			return u.BusinessMessage.Text, u.BusinessMessage.Text != ""
 		}
 	case OnEditedBusinessMessage:
 		if u.EditedBusinessMessage != nil {
-			return u.EditedBusinessMessage.Text
+			return u.EditedBusinessMessage.Text, u.EditedBusinessMessage.Text != ""
 		}
-	// Types without text — return a marker so the handler fires if the update type matches.
 	case OnChosenInlineResult:
 		if u.ChosenInlineResult != nil {
-			return u.ChosenInlineResult.Query
+			return u.ChosenInlineResult.Query, true
 		}
 	case OnShippingQuery:
 		if u.ShippingQuery != nil {
-			return "*"
+			return "*", true
 		}
 	case OnPreCheckoutQuery:
 		if u.PreCheckoutQuery != nil {
-			return "*"
+			return "*", true
 		}
 	case OnPoll:
 		if u.Poll != nil {
-			return "*"
+			return "*", true
 		}
 	case OnPollAnswer:
 		if u.PollAnswer != nil {
-			return "*"
+			return "*", true
 		}
 	case OnMyChatMember:
 		if u.MyChatMember != nil {
-			return "*"
+			return "*", true
 		}
 	case OnChatMember:
 		if u.ChatMember != nil {
-			return "*"
+			return "*", true
 		}
 	case OnChatJoinRequest:
 		if u.ChatJoinRequest != nil {
-			return "*"
+			return "*", true
 		}
 	case OnChatBoost:
 		if u.ChatBoost != nil {
-			return "*"
+			return "*", true
 		}
 	case OnRemovedChatBoost:
 		if u.RemovedChatBoost != nil {
-			return "*"
+			return "*", true
 		}
 	case OnMessageReaction:
 		if u.MessageReaction != nil {
-			return "*"
+			return "*", true
 		}
 	case OnMessageReactionCount:
 		if u.MessageReactionCount != nil {
-			return "*"
+			return "*", true
 		}
 	case OnBusinessConnection:
 		if u.BusinessConnection != nil {
-			return "*"
+			return "*", true
 		}
 	case OnDeletedBusinessMessages:
 		if u.DeletedBusinessMessages != nil {
-			return "*"
+			return "*", true
 		}
 	case OnPurchasedPaidMedia:
 		if u.PurchasedPaidMedia != nil {
-			return "*"
+			return "*", true
 		}
 	case OnCommand:
 		if u.Message != nil {
-			return extractCommand(u.Message)
+			cmd := extractCommand(u.Message)
+			return cmd, cmd != ""
 		}
 	}
-	return ""
+	return "", false
 }
 
 // extractCommand returns the command name from a message (without "/" and "@botname").
